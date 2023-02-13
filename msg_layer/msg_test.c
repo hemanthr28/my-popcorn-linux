@@ -8,7 +8,7 @@
 #include <linux/kthread.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-
+#include <linux/module.h>
 #include "../../kernel/popcorn/types.h"
 #include "common.h"
 
