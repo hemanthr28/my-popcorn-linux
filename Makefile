@@ -5,6 +5,10 @@ SUBLEVEL = 21
 EXTRAVERSION =
 NAME = Bobtail Squid
 
+# Cross compilation flag defines
+ARCH=arm64
+CROSS_COMPILE=aarch64-linux-gnu-
+
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
 # More info can be located in ./README
