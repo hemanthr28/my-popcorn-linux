@@ -7,7 +7,7 @@ NAME = Bobtail Squid
 
 # Cross compilation flag defines
 ARCH=arm64
-CROSS_COMPILE=aarch64-poky-linux-
+CROSS_COMPILE=aarch64-xilinx-linux-
 #CROSS_COMPILE=aarch64-linux-gnu-
 
 
