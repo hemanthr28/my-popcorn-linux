@@ -6,8 +6,8 @@ EXTRAVERSION =
 NAME = Bobtail Squid
 
 # Cross compilation flag defines
-ARCH=arm64
-CROSS_COMPILE=aarch64-xilinx-linux-
+#ARCH=arm64
+#CROSS_COMPILE=aarch64-xilinx-linux-
 #CROSS_COMPILE=aarch64-linux-gnu-
 
 
