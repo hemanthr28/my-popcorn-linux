@@ -218,6 +218,9 @@ static struct send_work *send_work_pool = NULL;
 static queue_t *send_queue;
 static queue_tr *recv_queue;
 
+static u64 st_pollthrd, et_pollthrd, avg_pollthrd;
+static int cnt_pollthrd=1;
+
 /*----------------------------------------------------------------------------
  * Platform Device Functions
  *----------------------------------------------------------------------------*/
@@ -282,8 +285,13 @@ static int poll_dma(void* arg0)
     //printk("In poll_dma\n");
     while (!kthread_freezable_should_stop(&was_frozen)) {
 
+        //st_pollthrd = ktime_get_ns();
         if (*(uint64_t *)((recv_queue->work_list[tmp]->addr)+(1023*8)) == 0xd010d010) {
             
+            //et_pollthrd = ktime_get_ns();
+            //avg_pollthrd += ktime_to_ns(ktime_sub(et_pollthrd, st_pollthrd));
+            //printk("Time to detect the message = %lld ns\n", avg_pollthrd/cnt_pollthrd);
+            //cnt_pollthrd += 1;
             *(uint64_t *)((recv_queue->work_list[tmp]->addr)+(1023*8)) = 0x0;
             tmp = (tmp+1)%64;
             //printk("tmp = %d\n", tmp);
@@ -481,7 +489,7 @@ int pcie_axi_kmsg_post(int nid, struct pcn_kmsg_message *msg, size_t size)
                 //The issue could be due to the buffer capacity in the PCIE IP, which could over get filled up. 
                 __raw_writeq(*(u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)), (zynq_hw_addr + (i*8)));
                 //__iowrite64_copy((zynq_hw_addr + (i*8)), (u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)), 1);
-                udelay(2); //Added an explicit delay (NOT RECOMMENDED!!!), seem to work. Need to think of a better approach
+                //udelay(2); //Added an explicit delay (NOT RECOMMENDED!!!), seem to work. Need to think of a better approach
                 //printk("Data in post=%llx\n",*(u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)));
         }
         __raw_writeq(0x00000000d010d010, (zynq_hw_addr+(1022*8)));
@@ -512,7 +520,7 @@ int pcie_axi_kmsg_send(int nid, struct pcn_kmsg_message *msg, size_t size)//0,
             //The issue could be due to the buffer capacity in the PCIE IP, which could over get filled up. 
             __raw_writeq(*(u64 *)((work->addr)+(i*8)), (zynq_hw_addr+(i*8)));
             //__iowrite64_copy((zynq_hw_addr+(i*8)), (u64 *)((work->addr)+(i*8)), 1);
-            udelay(2);//Added an explicit delay (NOT RECOMMENDED!!!), seem to work. Need to think of a better approach
+            //udelay(2);//Added an explicit delay (NOT RECOMMENDED!!!), seem to work. Need to think of a better approach
             //printk("Data in send=%llx\n",*(u64 *)((work->addr)+(i*8)));
 
         }
