@@ -249,18 +249,6 @@ void process_message(int recv_i)
     struct pcn_kmsg_message *msg;
     msg = recv_queue->work_list[recv_i]->addr;
     pcn_kmsg_process(msg);
-    /*
-    printk("process messgage in %llx\n", virt_to_phys(recv_queue->work_list[recv_i]->addr));
-    if (msg->header.type < 0 || msg->header.type >= PCN_KMSG_TYPE_MAX) {
-        printk("Need to call a process function\n");
-        //pcn_kmsg_pcie_axi_process(PCN_KMSG_TYPE_PROT_PROC_REQUEST, recv_queue->work_list[recv_i]->addr);  
-    } else {
-        printk("ARMs nid = %d\n", msg->header.from_nid);
-        node_info_t *info = (node_info_t *)msg;
-        printk("ARMs nid from nid_info=%d\n", info->nid);
-        printk("The msessage is %llx\n", *(uint64_t *)msg);
-        pcn_kmsg_process(msg);
-    }*/
 }
 
 static struct send_work *__get_send_work(int index) 
@@ -284,31 +272,20 @@ static int poll_dma(void* arg0)
 {   
     bool was_frozen;
     int recv_index = 0, index = 0, tmp = 0;
-    //printk("In poll_dma\n");
     while (!kthread_freezable_should_stop(&was_frozen)) {
 
-        st_pollthrd = ktime_get_ns();
         if (*(uint64_t *)((recv_queue->work_list[tmp]->addr)+(1023*8)) == 0xd010d010) {
             
-            et_pollthrd = ktime_get_ns();
-            avg_pollthrd += ktime_to_ns(ktime_sub(et_pollthrd, st_pollthrd));
-            printk("Time to detect the message = %lld ns\n", avg_pollthrd/cnt_pollthrd);
-            cnt_pollthrd += 1;
             *(uint64_t *)((recv_queue->work_list[tmp]->addr)+(1023*8)) = 0x0;
             tmp = (tmp+1)%64;
-            //printk("tmp = %d\n", tmp);
             index = __get_recv_index(recv_queue);
-            //printk("Index = %d\n", index);
             __update_recv_index(recv_queue, index+1);
-            //printk("Poll count = %d\n", poll_count);
-            //poll_count++;
             recv_index = recv_queue->size;
             recv_queue->size += 1;
             if (recv_queue->size == recv_queue->nr_entries) {
                 recv_queue->size = 0;
             }
             process_message(recv_index);
-            //printk("Processed popcorn message.\n");
         } else if (h2c_desc_complete != 0) {
             no_of_messages += 1;
             h2c_desc_complete = 0;
@@ -367,7 +344,6 @@ static queue_t* __setup_send_queue(int entries)
         send_q->work_list[i]->dma_addr = base_dma + FDSM_MSG_SIZE * base_index;
         ++base_index;
         radix_tree_insert(&send_tree, (unsigned long)(send_q->work_list[i]->addr), send_q->work_list[i]->addr);//send_q->work_list[i]->dma_addr); Inserting the msg as key and storing the address. 
-        //printk("key=%llx value=%llx\n",(unsigned long)send_q->work_list[i]->addr, (send_q->work_list[i]->addr));
     }
 
     return send_q;
@@ -396,7 +372,6 @@ static __init queue_tr* __setup_recv_buffer(int entries)
         recv_q->work_list[i]->addr = base_addr +  FDSM_MSG_SIZE * base_index;
         recv_q->work_list[i]->dma_addr = base_dma + FDSM_MSG_SIZE * base_index;
         ++base_index;
-        //printk("Recv Q addr=%llx\n",(recv_q->work_list[i]->dma_addr));
     }
     __update_recv_index(recv_q, 0);
     return recv_q;
@@ -481,28 +456,15 @@ void pcie_axi_kmsg_stat(struct seq_file *seq, void *v)
 
 int pcie_axi_kmsg_post(int nid, struct pcn_kmsg_message *msg, size_t size)
 {   
-    //printk("In post\n");
     int i;
     if (radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))) {
 
         spin_lock(&pcie_axi_lock);
-        //printk("Size = %ld\n", size);
-        st_post = ktime_get_ns();
         for(i=0; i<((size/8)+1); i++){
-        //for(i=0; i<((FDSM_MSG_SIZE/8)-2); i++){
-                //Tried memory barrier, doesn't seem to work.
-                //The issue could be due to the buffer capacity in the PCIE IP, which could over get filled up. 
                 __raw_writeq(*(u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)), (zynq_hw_addr + (i*8)));
-                //__iowrite64_copy((zynq_hw_addr + (i*8)), (u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)), 1);
-                //udelay(2); //Added an explicit delay (NOT RECOMMENDED!!!), seem to work. Need to think of a better approach
-                //printk("Data in post=%llx\n",*(u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)));
         }
         __raw_writeq(0x00000000d010d010, (zynq_hw_addr+(1022*8)));
         __raw_writeq(0x00000000d010d010, (zynq_hw_addr+(1023*8)));
-        et_post = ktime_get_ns();
-        avg_post += ktime_to_ns(ktime_sub(et_post, st_post));
-        cnt_post += 1;
-        printk("Time to post = %lldns\n", avg_post/cnt_post);
         spin_unlock(&pcie_axi_lock);
         h2c_desc_complete = 1;
     } else {
@@ -515,7 +477,6 @@ int pcie_axi_kmsg_send(int nid, struct pcn_kmsg_message *msg, size_t size)//0,
 {   
     struct send_work *work;
     int ret, i;
-    //printk("In pcie_axi_kmsg_send\n");
     DECLARE_COMPLETION_ONSTACK(done);
 
     work = __get_send_work(send_queue->tail);
@@ -525,14 +486,7 @@ int pcie_axi_kmsg_send(int nid, struct pcn_kmsg_message *msg, size_t size)//0,
     work->done = &done;
     spin_lock(&pcie_axi_lock);
     for(i=0; i<((size/8)+1); i++){ 
-    //for(i=0; i<((FDSM_MSG_SIZE/8)-2); i++){
-            //Tried memory barrier, doesn't seem to work.
-            //The issue could be due to the buffer capacity in the PCIE IP, which could over get filled up. 
             __raw_writeq(*(u64 *)((work->addr)+(i*8)), (zynq_hw_addr+(i*8)));
-            //__iowrite64_copy((zynq_hw_addr+(i*8)), (u64 *)((work->addr)+(i*8)), 1);
-            //udelay(2);//Added an explicit delay (NOT RECOMMENDED!!!), seem to work. Need to think of a better approach
-            //printk("Data in send=%llx\n",*(u64 *)((work->addr)+(i*8)));
-
         }
     __raw_writeq(0x00000000d010d010, zynq_hw_addr+(1022*8)); //Write the last 2 bytes with a patter to indicate the polling thread.
     __raw_writeq(0x00000000d010d010, zynq_hw_addr+(1023*8));    

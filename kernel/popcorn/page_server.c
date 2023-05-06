@@ -40,14 +40,6 @@
 
 #include "trace_events.h"
 
-u64 st_cptousr, et_cptousr, avg_cptousr, st_prep, et_prep, avg_prep;
-int cnt_cptousr=1, cnt_prep=1;
-u64 st_lclflt_org, et_lclflt_org, avg_lclflt_org, st_pte, et_pte, avg_pte;
-int cnt_lclflt_org=1,  cnt_pte=1;
-u64 st_rmflt_org, et_rmflt_org;
-u64 avg_rmflt_org;
-int cnt_rmflt_org=1;
-
 inline void page_server_start_mm_fault(unsigned long address)
 {
 #ifdef CONFIG_POPCORN_STAT_PGFAULTS
@@ -1339,7 +1331,6 @@ again:
 		return VM_FAULT_OOM;
 	}
 
-	st_prep = ktime_get_ns();
 	spin_lock(ptl);
 	if (pte_none(*pte)) {
 		int ret;
@@ -1411,10 +1402,6 @@ again:
 		spin_unlock(ptl);
 	}
 	pte_unmap(pte);
-	et_prep = ktime_get_ns();
-	avg_prep += ktime_to_ns(ktime_sub(et_prep, st_prep));
-	printk("Time to prep pages and sdsm = %lld ns\n", avg_prep/cnt_prep);
-	cnt_prep += 1;
 	if (!grant) {
 		flush_cache_page(vma, addr, page_to_pfn(page));
 		if (TRANSFER_PAGE_WITH_RDMA) {
@@ -1424,12 +1411,7 @@ again:
 			kunmap(page);
 		} else {
 			paddr = kmap_atomic(page);
-			st_cptousr = ktime_get_ns();
 			copy_from_user_page(vma, page, addr, res->page, paddr, PAGE_SIZE);
-			et_cptousr = ktime_get_ns();
-			avg_cptousr += ktime_to_ns(ktime_sub(et_cptousr, st_cptousr));
-			printk("Time to copy from user = %lld ns \n", avg_cptousr/cnt_cptousr);
-			cnt_cptousr += 1;
 			kunmap_atomic(paddr);
 		}
 	}
@@ -1499,12 +1481,7 @@ again:
 	if (tsk->at_remote) {
 		res->result = __handle_remotefault_at_remote(tsk, mm, vma, req, res);
 	} else {
-		st_rmflt_org = ktime_get_ns();
 		res->result = __handle_remotefault_at_origin(tsk, mm, vma, req, res);
-		et_rmflt_org = ktime_get_ns();
-		avg_rmflt_org += ktime_to_ns(ktime_sub(et_rmflt_org, st_rmflt_org));
-		printk("Time taken for rmflt handle at org = %lld ns\n", avg_rmflt_org/cnt_rmflt_org);
-		cnt_rmflt_org += 1;
 	}
 
 out_up:
@@ -1909,8 +1886,6 @@ int page_server_handle_pte_fault(struct vm_fault *vmf)
 	unsigned long addr = vmf->address & PAGE_MASK;
 	int ret = 0;
 
-	st_pte = ktime_get_ns();
-
 	might_sleep();
 
 	PGPRINTK("\n## PAGEFAULT [%d] %lx %c %lx %x %lx\n",
@@ -1923,12 +1898,7 @@ int page_server_handle_pte_fault(struct vm_fault *vmf)
 	 * Thread at the origin
 	 */
 	if (!current->at_remote) {
-		st_lclflt_org = ktime_get_ns();
 		ret = __handle_localfault_at_origin(vmf);
-		et_lclflt_org = ktime_get_ns();
-		avg_lclflt_org += ktime_to_ns(ktime_sub(et_lclflt_org, st_lclflt_org));
-		printk("Time taken at __handle_localfault_at_origin = %lld ns\n", avg_lclflt_org/cnt_lclflt_org);
-		cnt_lclflt_org += 1;
 		goto out;
 	}
 
@@ -1976,10 +1946,6 @@ out:
 	trace_pgfault(my_nid, current->pid,
 			fault_for_write(vmf->flags) ? 'W' : 'R',
 			instruction_pointer(current_pt_regs()), addr, ret);
-	et_pte = ktime_get_ns();
-	avg_pte += ktime_to_ns(ktime_sub(et_pte, st_pte));
-	printk("PTE fault time = %lld ns\n", avg_pte/cnt_pte);
-	cnt_pte += 1;
 	return ret;
 }
 
