@@ -75,6 +75,8 @@ u8 __iomem *zynq_hw_addr;
 resource_size_t zynq_hw_regs_size;
 phys_addr_t zynq_hw_regs_phys;
 u32 h2c_desc_complete = 0;
+u64 st_post, et_post, avg_post;
+int cnt_post;
 
 #define NODE_INFO_FIELDS \
     int nid; \
@@ -285,13 +287,13 @@ static int poll_dma(void* arg0)
     //printk("In poll_dma\n");
     while (!kthread_freezable_should_stop(&was_frozen)) {
 
-        //st_pollthrd = ktime_get_ns();
+        st_pollthrd = ktime_get_ns();
         if (*(uint64_t *)((recv_queue->work_list[tmp]->addr)+(1023*8)) == 0xd010d010) {
             
-            //et_pollthrd = ktime_get_ns();
-            //avg_pollthrd += ktime_to_ns(ktime_sub(et_pollthrd, st_pollthrd));
-            //printk("Time to detect the message = %lld ns\n", avg_pollthrd/cnt_pollthrd);
-            //cnt_pollthrd += 1;
+            et_pollthrd = ktime_get_ns();
+            avg_pollthrd += ktime_to_ns(ktime_sub(et_pollthrd, st_pollthrd));
+            printk("Time to detect the message = %lld ns\n", avg_pollthrd/cnt_pollthrd);
+            cnt_pollthrd += 1;
             *(uint64_t *)((recv_queue->work_list[tmp]->addr)+(1023*8)) = 0x0;
             tmp = (tmp+1)%64;
             //printk("tmp = %d\n", tmp);
@@ -484,7 +486,10 @@ int pcie_axi_kmsg_post(int nid, struct pcn_kmsg_message *msg, size_t size)
     if (radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))) {
 
         spin_lock(&pcie_axi_lock);
-        for(i=0; i<((FDSM_MSG_SIZE/8)-2); i++){
+        //printk("Size = %ld\n", size);
+        st_post = ktime_get_ns();
+        for(i=0; i<((size/8)+1); i++){
+        //for(i=0; i<((FDSM_MSG_SIZE/8)-2); i++){
                 //Tried memory barrier, doesn't seem to work.
                 //The issue could be due to the buffer capacity in the PCIE IP, which could over get filled up. 
                 __raw_writeq(*(u64 *)(radix_tree_lookup(&send_tree, (unsigned long)((unsigned long *)msg))+(i*8)), (zynq_hw_addr + (i*8)));
@@ -494,6 +499,10 @@ int pcie_axi_kmsg_post(int nid, struct pcn_kmsg_message *msg, size_t size)
         }
         __raw_writeq(0x00000000d010d010, (zynq_hw_addr+(1022*8)));
         __raw_writeq(0x00000000d010d010, (zynq_hw_addr+(1023*8)));
+        et_post = ktime_get_ns();
+        avg_post += ktime_to_ns(ktime_sub(et_post, st_post));
+        cnt_post += 1;
+        printk("Time to post = %lldns\n", avg_post/cnt_post);
         spin_unlock(&pcie_axi_lock);
         h2c_desc_complete = 1;
     } else {
@@ -513,9 +522,10 @@ int pcie_axi_kmsg_send(int nid, struct pcn_kmsg_message *msg, size_t size)//0,
 
     memcpy(work->addr, msg, size);
 
-    //work->done = &done;
+    work->done = &done;
     spin_lock(&pcie_axi_lock);
-    for(i=0; i<((FDSM_MSG_SIZE/8)-2); i++){ 
+    for(i=0; i<((size/8)+1); i++){ 
+    //for(i=0; i<((FDSM_MSG_SIZE/8)-2); i++){
             //Tried memory barrier, doesn't seem to work.
             //The issue could be due to the buffer capacity in the PCIE IP, which could over get filled up. 
             __raw_writeq(*(u64 *)((work->addr)+(i*8)), (zynq_hw_addr+(i*8)));
@@ -528,7 +538,6 @@ int pcie_axi_kmsg_send(int nid, struct pcn_kmsg_message *msg, size_t size)//0,
     __raw_writeq(0x00000000d010d010, zynq_hw_addr+(1023*8));    
     spin_unlock(&pcie_axi_lock);
     h2c_desc_complete = 1;
-    /*
     __process_sent(work);
     if (!try_wait_for_completion(&done)){
         ret = wait_for_completion_io_timeout(&done, 60 *HZ);
@@ -537,7 +546,7 @@ int pcie_axi_kmsg_send(int nid, struct pcn_kmsg_message *msg, size_t size)//0,
             ret = -ETIME;
             goto out;
         }
-    }*/
+    }
     return 0;
 
 out:

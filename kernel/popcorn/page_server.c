@@ -40,6 +40,14 @@
 
 #include "trace_events.h"
 
+u64 st_cptousr, et_cptousr, avg_cptousr, st_prep, et_prep, avg_prep;
+int cnt_cptousr=1, cnt_prep=1;
+u64 st_lclflt_org, et_lclflt_org, avg_lclflt_org, st_pte, et_pte, avg_pte;
+int cnt_lclflt_org=1,  cnt_pte=1;
+u64 st_rmflt_org, et_rmflt_org;
+u64 avg_rmflt_org;
+int cnt_rmflt_org=1;
+
 inline void page_server_start_mm_fault(unsigned long address)
 {
 #ifdef CONFIG_POPCORN_STAT_PGFAULTS
@@ -1323,10 +1331,7 @@ static int __handle_remotefault_at_origin(struct task_struct *tsk, struct mm_str
 	struct fault_handle *fh;
 	bool leader;
 	bool grant = false;
-	u64 st_cptousr, et_cptousr, avg_cptousr, st_prep, et_prep, avg_prep;
-	int cnt_cptousr=1, cnt_prep=1;
 
-	st_prep = ktime_get_ns();
 again:
 	pte = __get_pte_at_alloc(mm, vma, addr, &pmd, &ptl);
 	if (!pte) {
@@ -1334,6 +1339,7 @@ again:
 		return VM_FAULT_OOM;
 	}
 
+	st_prep = ktime_get_ns();
 	spin_lock(ptl);
 	if (pte_none(*pte)) {
 		int ret;
@@ -1407,7 +1413,7 @@ again:
 	pte_unmap(pte);
 	et_prep = ktime_get_ns();
 	avg_prep += ktime_to_ns(ktime_sub(et_prep, st_prep));
-	printk("Time to prep pages = %lld ns\n", avg_prep/cnt_prep);
+	printk("Time to prep pages and sdsm = %lld ns\n", avg_prep/cnt_prep);
 	cnt_prep += 1;
 	if (!grant) {
 		flush_cache_page(vma, addr, page_to_pfn(page));
@@ -1451,9 +1457,6 @@ static void process_remote_page_request(struct work_struct *work)
 	int res_size;
 	enum pcn_kmsg_type res_type;
 	int down_read_retry = 0;
-	u64 st_rmflt_org, et_rmflt_org;
-	u64 avg_rmflt_org;
-	int cnt_rmflt_org=1;
 
 	if (TRANSFER_PAGE_WITH_RDMA) {
 		res = pcn_kmsg_get(sizeof(remote_page_response_short_t));
@@ -1905,8 +1908,6 @@ int page_server_handle_pte_fault(struct vm_fault *vmf)
 {
 	unsigned long addr = vmf->address & PAGE_MASK;
 	int ret = 0;
-	u64 st_lclflt_org, et_lclflt_org, avg_lclflt_org, st_pte, et_pte, avg_pte;
-	int cnt_lclflt_org=1,  cnt_pte=1;
 
 	st_pte = ktime_get_ns();
 
